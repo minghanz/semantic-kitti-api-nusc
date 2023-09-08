@@ -12,7 +12,8 @@ class LaserScanVis:
   """Class that creates and handles a visualizer for a pointcloud"""
 
   def __init__(self, scan, scan_names, label_names, offset=0,
-               semantics=True, instances=False, images=True, link=False):
+               semantics=True, instances=False, images=True, link=False, 
+               accumulate=False, poses_file=None, calib_file=None):
     self.scan = scan
     self.scan_names = scan_names
     self.label_names = label_names
@@ -22,6 +23,9 @@ class LaserScanVis:
     self.instances = instances
     self.images = images
     self.link = link
+    self.accumulate = accumulate
+    self.poses_file = poses_file
+    self.calib_file = calib_file
     # sanity check
     if not self.semantics and self.instances:
       print("Instances are only allowed in when semantics=True")
@@ -120,6 +124,73 @@ class LaserScanVis:
       if self.link:
         self.inst_view.camera.link(self.scan_view.camera)
 
+    # if self.accumulate:
+    self.points = np.zeros((0, 3), dtype=np.float32)        # [m, 3]: x, y, z
+    self.unproj_range = np.zeros((0, ), dtype=np.float32)
+    if self.semantics:
+      self.sem_label_color = np.zeros((0, 3), dtype=np.float32)  # [m ,3]: color
+    if self.instances:
+      self.inst_label_color = np.zeros((0, 3), dtype=np.float32)
+
+    if self.accumulate:
+      calib = self.parse_calibration(self.calib_file)
+      self.poses = self.parse_poses(self.poses_file, calib)
+      
+  def parse_calibration(self, filename):
+      """ read calibration file with given filename
+
+          Returns
+          -------
+          dict
+              Calibration matrices as 4x4 numpy arrays.
+      """
+      calib = {}
+
+      calib_file = open(filename)
+      for line in calib_file:
+          key, content = line.strip().split(":")
+          values = [float(v) for v in content.strip().split()]
+
+          pose = np.zeros((4, 4))
+          pose[0, 0:4] = values[0:4]
+          pose[1, 0:4] = values[4:8]
+          pose[2, 0:4] = values[8:12]
+          pose[3, 3] = 1.0
+
+          calib[key] = pose
+
+      calib_file.close()
+
+      return calib
+
+  def parse_poses(self, filename, calibration):
+      """ read poses file with per-scan poses from given filename
+
+          Returns
+          -------
+          list
+              list of poses as 4x4 numpy arrays.
+      """
+      file = open(filename)
+
+      poses = []
+
+      Tr = calibration["Tr"]
+      Tr_inv = np.linalg.inv(Tr)
+
+      for line in file:
+          values = [float(v) for v in line.strip().split()]
+
+          pose = np.zeros((4, 4))
+          pose[0, 0:4] = values[0:4]
+          pose[1, 0:4] = values[4:8]
+          pose[2, 0:4] = values[8:12]
+          pose[3, 3] = 1.0
+
+          poses.append(np.matmul(Tr_inv, np.matmul(pose, Tr)))
+
+      return poses
+
   def get_mpl_colormap(self, cmap_name):
     cmap = plt.get_cmap(cmap_name)
 
@@ -132,10 +203,29 @@ class LaserScanVis:
     return color_range.reshape(256, 3).astype(np.float32) / 255.0
   def update_scan(self):
     # first open data
-    self.scan.open_scan(self.scan_names[self.offset])
+    if self.accumulate:
+      self.scan.open_scan(self.scan_names[self.offset], self.poses[self.offset])
+    else:
+      self.scan.open_scan(self.scan_names[self.offset])
     if self.semantics:
       self.scan.open_label(self.label_names[self.offset])
       self.scan.colorize()
+
+    if self.accumulate:
+      # transform points to body frame
+      self.points = np.concatenate([self.points, self.scan.points], 0)
+      self.unproj_range = np.concatenate([self.unproj_range, self.scan.unproj_range], 0)
+      if self.semantics:
+        self.sem_label_color = np.concatenate([self.sem_label_color, self.scan.sem_label_color], 0)
+      if self.instances:
+        self.inst_label_color = np.concatenate([self.inst_label_color, self.scan.inst_label_color], 0)
+    else:
+      self.points = self.scan.points
+      self.unproj_range = self.scan.unproj_range
+      if self.semantics:
+        self.sem_label_color = self.scan.sem_label_color
+      if self.instances:
+        self.inst_label_color = self.scan.inst_label_color
 
     # then change names
     title = "scan " + str(self.offset)
@@ -148,7 +238,7 @@ class LaserScanVis:
     # plot scan
     power = 16
     # print()
-    range_data = np.copy(self.scan.unproj_range)
+    range_data = np.copy(self.unproj_range)
     # print(range_data.max(), range_data.min())
     range_data = range_data**(1 / power)
     # print(range_data.max(), range_data.min())
@@ -157,23 +247,23 @@ class LaserScanVis:
                      255).astype(np.uint8)
     viridis_map = self.get_mpl_colormap("viridis")
     viridis_colors = viridis_map[viridis_range]
-    self.scan_vis.set_data(self.scan.points,
+    self.scan_vis.set_data(self.points,
                            face_color=viridis_colors[..., ::-1],
                            edge_color=viridis_colors[..., ::-1],
                            size=1)
 
     # plot semantics
     if self.semantics:
-      self.sem_vis.set_data(self.scan.points,
-                            face_color=self.scan.sem_label_color[..., ::-1],
-                            edge_color=self.scan.sem_label_color[..., ::-1],
+      self.sem_vis.set_data(self.points,
+                            face_color=self.sem_label_color[..., ::-1],
+                            edge_color=self.sem_label_color[..., ::-1],
                             size=1)
 
     # plot instances
     if self.instances:
-      self.inst_vis.set_data(self.scan.points,
-                             face_color=self.scan.inst_label_color[..., ::-1],
-                             edge_color=self.scan.inst_label_color[..., ::-1],
+      self.inst_vis.set_data(self.points,
+                             face_color=self.inst_label_color[..., ::-1],
+                             edge_color=self.inst_label_color[..., ::-1],
                              size=1)
 
     if self.images:

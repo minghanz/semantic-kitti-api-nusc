@@ -97,6 +97,24 @@ if __name__ == '__main__':
     action='store_true',
     help='Apply learning map to color map: visualize only classes that were trained on',
   )
+  parser.add_argument(
+      '--nuscenes',
+      default=False,
+      action='store_true',
+      help='Alternate location for labels, to use predictions folder. '
+      'Must point to directory containing the predictions in the proper format '
+      ' (see readme)'
+      'Defaults to %(default)s',
+  )
+  parser.add_argument(
+      '--accumulate',
+      default=False,
+      action='store_true',
+      help='Alternate location for labels, to use predictions folder. '
+      'Must point to directory containing the predictions in the proper format '
+      ' (see readme)'
+      'Defaults to %(default)s',
+  )
   FLAGS, unparsed = parser.parse_known_args()
 
   # print summary of what we will do
@@ -125,7 +143,10 @@ if __name__ == '__main__':
     quit()
 
   # fix sequence name
-  FLAGS.sequence = '{0:02d}'.format(int(FLAGS.sequence))
+  if FLAGS.nuscenes:
+    FLAGS.sequence = '{0:04d}'.format(int(FLAGS.sequence))
+  else:
+    FLAGS.sequence = '{0:02d}'.format(int(FLAGS.sequence))
 
   # does sequence folder exist?
   scan_paths = os.path.join(FLAGS.dataset, "sequences",
@@ -177,6 +198,11 @@ if __name__ == '__main__':
     scan = SemLaserScan(color_dict, project=True)
 
   # create a visualizer
+  poses_file = os.path.join(FLAGS.dataset, "sequences",
+                            FLAGS.sequence, "poses.txt")
+  calib_file = os.path.join(FLAGS.dataset, "sequences",
+                            FLAGS.sequence, "calib.txt")
+  
   semantics = not FLAGS.ignore_semantics
   instances = FLAGS.do_instances
   images = not FLAGS.ignore_images
@@ -186,7 +212,8 @@ if __name__ == '__main__':
                      scan_names=scan_names,
                      label_names=label_names,
                      offset=FLAGS.offset,
-                     semantics=semantics, instances=instances and semantics, images=images, link=FLAGS.link)
+                     semantics=semantics, instances=instances and semantics, images=images, link=FLAGS.link,
+                     accumulate=FLAGS.accumulate, poses_file=poses_file, calib_file=calib_file)
 
   # print instructions
   print("To navigate:")

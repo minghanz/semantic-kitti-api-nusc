@@ -1,3 +1,10 @@
+# API for SemanticKITTI with support for converted nuScenes
+This repo is modified from the official semantic-kitti-api repo to support nuScenes dataset converted into the SemanticKITTI format using this [tool](https://github.com/minghanz/nuscenes2semantickitti). 
+
+`content.py` now supports generating the frequency of different labels of the converted nuScenes dataset. See `run_content.sh` for commands. 
+
+`visualize.py` now supports accumulation mode, in which case sequential scans will accumulate in a common reference frame, so that one can visually inspect if the pose and calibration information is correct. See `run_visualize.sh` for commands. 
+
 # API for SemanticKITTI
 
 This repository contains helper scripts to open, visualize, process, and 

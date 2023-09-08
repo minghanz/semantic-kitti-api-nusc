@@ -54,7 +54,7 @@ class LaserScan:
   def __len__(self):
     return self.size()
 
-  def open_scan(self, filename):
+  def open_scan(self, filename, pose=None):
     """ Open raw scan and fill in attributes
     """
     # reset just in case there was an open structure
@@ -76,6 +76,8 @@ class LaserScan:
     # put in attribute
     points = scan[:, 0:3]    # get xyz
     remissions = scan[:, 3]  # get remission
+    if pose is not None:
+      points = points @ pose[0:3, 0:3].T + pose[0:3, 3].T
     self.set_points(points, remissions)
 
   def set_points(self, points, remissions=None):

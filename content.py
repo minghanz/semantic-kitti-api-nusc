@@ -7,6 +7,7 @@ import yaml
 import numpy as np
 import collections
 from auxiliary.laserscan import SemLaserScan
+from tqdm import tqdm
 
 
 if __name__ == '__main__':
@@ -23,6 +24,24 @@ if __name__ == '__main__':
       required=False,
       default="config/semantic-kitti.yaml",
       help='Dataset config file. Defaults to %(default)s',
+  )
+  parser.add_argument(
+      '--nuscenes',
+      default=False,
+      action='store_true',
+      help='Alternate location for labels, to use predictions folder. '
+      'Must point to directory containing the predictions in the proper format '
+      ' (see readme)'
+      'Defaults to %(default)s',
+  )
+  parser.add_argument(
+      '--mini',
+      default=False,
+      action='store_true',
+      help='Alternate location for labels, to use predictions folder. '
+      'Must point to directory containing the predictions in the proper format '
+      ' (see readme)'
+      'Defaults to %(default)s',
   )
   FLAGS, unparsed = parser.parse_known_args()
 
@@ -43,7 +62,10 @@ if __name__ == '__main__':
     quit()
 
   # get training sequences to calculate statistics
-  sequences = CFG["split"]["train"]
+  if FLAGS.mini:
+    sequences = CFG["split"]["mini_train"]
+  else:
+    sequences = CFG["split"]["train"]
   print("Analizing sequences", sequences)
 
   # create content accumulator
@@ -61,7 +83,10 @@ if __name__ == '__main__':
 
     # make seq string
     print("*" * 80)
-    seqstr = '{0:02d}'.format(int(seq))
+    if FLAGS.nuscenes:
+      seqstr = '{0:04d}'.format(int(seq))
+    else:
+      seqstr = '{0:02d}'.format(int(seq))
     print("parsing seq {}".format(seq))
 
     # does sequence folder exist?
@@ -98,11 +123,11 @@ if __name__ == '__main__':
 
     # create a scan
     nclasses = len(CFG["labels"])
-    scan = SemLaserScan(nclasses, CFG["color_map"], project=False)
+    scan = SemLaserScan(CFG["color_map"], project=False)
 
-    for idx in range(len(scan_names)):
+    for idx in tqdm(range(len(scan_names))):
       # open scan
-      print(label_names[idx])
+      # print(label_names[idx])
       scan.open_scan(scan_names[idx])
       scan.open_label(label_names[idx])
       # make histogram and accumulate
@@ -125,12 +150,13 @@ if __name__ == '__main__':
     print("seq ", seqstr, "total", seq_total)
     for key, data in seq_accum.items():
       accum[key] += data
-      print(data)
+      # print(data)
 
   # print content to fill yaml file
   print("*" * 80)
   print("Content in training set")
   print(accum)
   accum = collections.OrderedDict(sorted(accum.items(), key=lambda t: t[0]))
-  for key, data in accum.items():
-    print(" {}: {}".format(key, data / total))
+  with open("content.yaml", 'w') as outfile:
+    for key, data in accum.items():
+      print(" {}: {}".format(key, data / total), file=outfile)
